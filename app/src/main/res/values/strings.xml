@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">车牌记录</string>
+    <string name="camera_permission_rationale">需要相机权限才能实时识别车牌。</string>
+    <string name="location_permission_rationale">允许位置权限后，记录会包含经纬度；拒绝后仍可识别车牌。</string>
+</resources>

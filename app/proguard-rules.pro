@@ -1,0 +1,2 @@
+-keep class com.hyperai.hyperlpr3.** { *; }
+-keepclasseswithmembernames class * { native <methods>; }
