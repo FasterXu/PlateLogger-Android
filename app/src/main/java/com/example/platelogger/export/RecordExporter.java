@@ -15,6 +15,7 @@ import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
@@ -25,18 +26,20 @@ public final class RecordExporter {
     private RecordExporter() { }
 
     public static void exportZip(ContentResolver resolver, Uri destination,
-                                 List<PlateRecord> records) throws IOException {
+                                 List<PlateRecord> records,
+                                 Map<String, String> notes) throws IOException {
         OutputStream stream = resolver.openOutputStream(destination, "w");
         if (stream == null) throw new IOException("无法打开导出文件");
         try (ZipOutputStream zip = new ZipOutputStream(stream)) {
             zip.putNextEntry(new ZipEntry("车牌记录.csv"));
             zip.write(new byte[]{(byte) 0xEF, (byte) 0xBB, (byte) 0xBF});
-            zip.write("序号,车牌号,车牌类型,出现时间,纬度,经度,定位来源,置信度,截图文件\r\n"
+            zip.write("序号,车牌号,备注,车牌类型,出现时间,纬度,经度,定位来源,置信度,截图文件\r\n"
                     .getBytes(StandardCharsets.UTF_8));
             for (PlateRecord record : records) {
                 File image = new File(record.imagePath);
                 String imageName = image.exists() ? "images/" + safeImageName(record, image) : "";
                 String row = record.id + "," + csv(record.plateNumber) + "," +
+                        csv(notes.get(record.plateNumber)) + "," +
                         csv(record.plateType) + "," +
                         csv(DATE_FORMAT.format(new Date(record.capturedAt))) + "," +
                         value(record.latitude) + "," + value(record.longitude) + "," +

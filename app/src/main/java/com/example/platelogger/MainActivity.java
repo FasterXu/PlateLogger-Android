@@ -84,18 +84,20 @@ public final class MainActivity extends AppCompatActivity {
     private static final float DEFAULT_CONFIDENCE_THRESHOLD = 0.88f;
     private static final String KEEP_SCREEN_AWAKE_KEY = "keep_screen_awake";
     private static final String DIM_AFTER_INACTIVITY_KEY = "dim_after_inactivity";
+    private static final String SAVED_ZOOM_RATIO = "camera_zoom_ratio";
     private static final long DIM_DELAY_MS = 30_000L;
     private static final float DIMMED_SCREEN_BRIGHTNESS = 0.03f;
 
     private PreviewView previewView;
     private View scannerPage;
     private View historyPage;
+    private View settingsPage;
     private View scannerFrame;
     private View focusIndicator;
     private View dimOverlay;
     private TextView statusText;
     private TextView currentPlate;
-    private TextView plateTypeText;
+    private TextView plateNoteText;
     private TextView recordCount;
     private TextView emptyText;
     private RecyclerView recordsList;
@@ -124,6 +126,7 @@ public final class MainActivity extends AppCompatActivity {
     private boolean dimAfterInactivity = true;
     private boolean screenDimmed;
     private float brightnessBeforeDim = WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE;
+    private float requestedZoomRatio = 1f;
 
     private ActivityResultLauncher<String[]> permissionLauncher;
     private ActivityResultLauncher<String> exportLauncher;
@@ -131,6 +134,10 @@ public final class MainActivity extends AppCompatActivity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        if (savedInstanceState != null) {
+            requestedZoomRatio = Math.max(0.1f,
+                    savedInstanceState.getFloat(SAVED_ZOOM_RATIO, 1f));
+        }
         setContentView(R.layout.activity_main);
         bindViews();
         setupPreviewControls();
@@ -174,12 +181,13 @@ public final class MainActivity extends AppCompatActivity {
         previewView = findViewById(R.id.preview);
         scannerPage = findViewById(R.id.scanner_page);
         historyPage = findViewById(R.id.history_page);
+        settingsPage = findViewById(R.id.settings_page);
         scannerFrame = findViewById(R.id.scanner_frame);
         focusIndicator = findViewById(R.id.focus_indicator);
         dimOverlay = findViewById(R.id.dim_overlay);
         statusText = findViewById(R.id.status_text);
         currentPlate = findViewById(R.id.current_plate);
-        plateTypeText = findViewById(R.id.current_plate_type);
+        plateNoteText = findViewById(R.id.current_plate_note);
         recordCount = findViewById(R.id.record_count);
         emptyText = findViewById(R.id.empty_text);
         recordsList = findViewById(R.id.records_list);
@@ -206,6 +214,16 @@ public final class MainActivity extends AppCompatActivity {
         scaleGestureDetector = new ScaleGestureDetector(this,
                 new ScaleGestureDetector.SimpleOnScaleGestureListener() {
                     @Override
+                    public boolean onScaleBegin(ScaleGestureDetector detector) {
+                        Camera activeCamera = camera;
+                        if (activeCamera == null) return false;
+                        ZoomState state = activeCamera.getCameraInfo().getZoomState().getValue();
+                        if (state == null) return false;
+                        requestedZoomRatio = state.getZoomRatio();
+                        return true;
+                    }
+
+                    @Override
                     public boolean onScale(ScaleGestureDetector detector) {
                         Camera activeCamera = camera;
                         if (activeCamera == null) return false;
@@ -213,7 +231,8 @@ public final class MainActivity extends AppCompatActivity {
                         if (state == null) return false;
                         float ratio = Math.max(state.getMinZoomRatio(),
                                 Math.min(state.getMaxZoomRatio(),
-                                        state.getZoomRatio() * detector.getScaleFactor()));
+                                        requestedZoomRatio * detector.getScaleFactor()));
+                        requestedZoomRatio = ratio;
                         activeCamera.getCameraControl().setZoomRatio(ratio);
                         statusText.setText(String.format(Locale.CHINA,
                                 "双指变焦 %.1fx · 点按车牌可对焦", ratio));
@@ -496,21 +515,21 @@ public final class MainActivity extends AppCompatActivity {
     private void setupNavigation() {
         BottomNavigationView navigation = findViewById(R.id.bottom_nav);
         navigation.setOnItemSelectedListener(item -> {
-            if (item.getItemId() == R.id.nav_history) {
-                showingScanner = false;
-                scannerPage.setVisibility(View.GONE);
-                historyPage.setVisibility(View.VISIBLE);
+            int itemId = item.getItemId();
+            showingScanner = itemId == R.id.nav_scanner;
+            scannerPage.setVisibility(showingScanner ? View.VISIBLE : View.GONE);
+            historyPage.setVisibility(itemId == R.id.nav_history ? View.VISIBLE : View.GONE);
+            settingsPage.setVisibility(itemId == R.id.nav_settings ? View.VISIBLE : View.GONE);
+
+            if (showingScanner) {
+                applyScreenPolicy();
+                startCameraIfReady();
+            } else {
                 if (cameraProvider != null) cameraProvider.unbindAll();
                 camera = null;
                 applyScreenPolicy();
-                loadHistory();
-                return true;
+                if (itemId == R.id.nav_history) loadHistory();
             }
-            showingScanner = true;
-            historyPage.setVisibility(View.GONE);
-            scannerPage.setVisibility(View.VISIBLE);
-            applyScreenPolicy();
-            startCameraIfReady();
             return true;
         });
     }
@@ -600,12 +619,23 @@ public final class MainActivity extends AppCompatActivity {
             cameraProvider.unbindAll();
             camera = cameraProvider.bindToLifecycle(
                     this, CameraSelector.DEFAULT_BACK_CAMERA, preview, analysis);
+            restoreZoomRatio();
             statusText.setText(locationTracker.hasPermission()
                     ? "点按对焦 · 双指变焦 · 正在记录位置"
                     : "点按对焦 · 双指变焦 · 未记录位置");
         } catch (RuntimeException error) {
             statusText.setText("无法绑定后置摄像头：" + safeMessage(error));
         }
+    }
+
+    private void restoreZoomRatio() {
+        Camera activeCamera = camera;
+        if (activeCamera == null) return;
+        ZoomState state = activeCamera.getCameraInfo().getZoomState().getValue();
+        if (state == null) return;
+        requestedZoomRatio = Math.max(state.getMinZoomRatio(),
+                Math.min(state.getMaxZoomRatio(), requestedZoomRatio));
+        activeCamera.getCameraControl().setZoomRatio(requestedZoomRatio);
     }
 
     private void analyzeFrame(@NonNull ImageProxy image) {
@@ -642,10 +672,17 @@ public final class MainActivity extends AppCompatActivity {
     private void processRecognition(Bitmap frame, Plate plate, long capturedAt) throws IOException {
         String code = PlateText.normalize(plate.getCode());
         String plateType = PlateCategory.labelFor(code, plate.getType());
+        String plateNote = database.getNote(code);
         runOnUiThread(() -> {
             currentPlate.setText(code);
             PlateBadgeStyler.apply(currentPlate, plateType);
-            plateTypeText.setText(plateType);
+            if (plateNote.isBlank()) {
+                plateNoteText.setText("");
+                plateNoteText.setVisibility(View.GONE);
+            } else {
+                plateNoteText.setText("备注：" + plateNote);
+                plateNoteText.setVisibility(View.VISIBLE);
+            }
             statusText.setText(String.format(Locale.CHINA,
                     "单帧识别 · 置信度 %.1f%%", plate.getConfidence() * 100f));
         });
@@ -779,7 +816,8 @@ public final class MainActivity extends AppCompatActivity {
         exportButton.setEnabled(false);
         worker.execute(() -> {
             try {
-                RecordExporter.exportZip(getContentResolver(), uri, database.getAll());
+                RecordExporter.exportZip(getContentResolver(), uri, database.getAll(),
+                        database.getAllNotes());
                 runOnUiThread(() -> Toast.makeText(this,
                         "导出完成（CSV 与车牌截图）", Toast.LENGTH_LONG).show());
             } catch (Exception error) {
@@ -797,10 +835,18 @@ public final class MainActivity extends AppCompatActivity {
     }
 
     @Override
+    protected void onSaveInstanceState(@NonNull Bundle outState) {
+        outState.putFloat(SAVED_ZOOM_RATIO, requestedZoomRatio);
+        super.onSaveInstanceState(outState);
+    }
+
+    @Override
     protected void onResume() {
         super.onResume();
         activityResumed = true;
         applyScreenPolicy();
+        if (database != null && historyPage != null &&
+                historyPage.getVisibility() == View.VISIBLE) loadHistory();
         if (locationTracker != null && locationTracker.hasPermission()) locationTracker.start();
     }
 

@@ -7,11 +7,13 @@ import android.database.sqlite.SQLiteDatabase;
 import android.database.sqlite.SQLiteOpenHelper;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 public final class PlateDatabase extends SQLiteOpenHelper {
     private static final String DB_NAME = "plate_records.db";
-    private static final int DB_VERSION = 2;
+    private static final int DB_VERSION = 3;
 
     public PlateDatabase(Context context) {
         super(context.getApplicationContext(), DB_NAME, null, DB_VERSION);
@@ -30,6 +32,7 @@ public final class PlateDatabase extends SQLiteOpenHelper {
                 "confidence REAL NOT NULL," +
                 "image_path TEXT NOT NULL)");
         db.execSQL("CREATE INDEX idx_plate_time ON plate_records(plate_number, captured_at)");
+        createNotesTable(db);
     }
 
     @Override
@@ -38,6 +41,13 @@ public final class PlateDatabase extends SQLiteOpenHelper {
             db.execSQL("ALTER TABLE plate_records ADD COLUMN plate_type " +
                     "TEXT NOT NULL DEFAULT '未分类'");
         }
+        if (oldVersion < 3) createNotesTable(db);
+    }
+
+    private static void createNotesTable(SQLiteDatabase db) {
+        db.execSQL("CREATE TABLE IF NOT EXISTS plate_notes (" +
+                "plate_number TEXT PRIMARY KEY," +
+                "note TEXT NOT NULL)");
     }
 
     public synchronized long insert(String plateNumber, String plateType, long capturedAt, Double latitude,
@@ -70,6 +80,37 @@ public final class PlateDatabase extends SQLiteOpenHelper {
 
     public synchronized List<PlateRecord> getByPlate(String plateNumber) {
         return queryRecords("plate_number = ?", new String[]{plateNumber});
+    }
+
+    public synchronized String getNote(String plateNumber) {
+        try (Cursor cursor = getReadableDatabase().query(
+                "plate_notes", new String[]{"note"}, "plate_number = ?",
+                new String[]{plateNumber}, null, null, null, "1")) {
+            return cursor.moveToFirst() ? cursor.getString(0) : "";
+        }
+    }
+
+    public synchronized void setNote(String plateNumber, String note) {
+        String normalized = PlateNote.normalize(note);
+        SQLiteDatabase db = getWritableDatabase();
+        if (normalized.isEmpty()) {
+            db.delete("plate_notes", "plate_number = ?", new String[]{plateNumber});
+            return;
+        }
+        ContentValues values = new ContentValues();
+        values.put("plate_number", plateNumber);
+        values.put("note", normalized);
+        db.insertWithOnConflict("plate_notes", null, values, SQLiteDatabase.CONFLICT_REPLACE);
+    }
+
+    public synchronized Map<String, String> getAllNotes() {
+        Map<String, String> notes = new HashMap<>();
+        try (Cursor cursor = getReadableDatabase().query(
+                "plate_notes", new String[]{"plate_number", "note"},
+                null, null, null, null, null)) {
+            while (cursor.moveToNext()) notes.put(cursor.getString(0), cursor.getString(1));
+        }
+        return notes;
     }
 
     private List<PlateRecord> queryRecords(String selection, String[] selectionArgs) {
@@ -106,7 +147,9 @@ public final class PlateDatabase extends SQLiteOpenHelper {
                 "ORDER BY p2.captured_at DESC, p2.id DESC LIMIT 1) AS latest_plate_type, " +
                 "(SELECT p2.image_path FROM plate_records p2 " +
                 "WHERE p2.plate_number = p.plate_number " +
-                "ORDER BY p2.captured_at DESC, p2.id DESC LIMIT 1) AS latest_image_path " +
+                "ORDER BY p2.captured_at DESC, p2.id DESC LIMIT 1) AS latest_image_path, " +
+                "COALESCE((SELECT n.note FROM plate_notes n " +
+                "WHERE n.plate_number = p.plate_number LIMIT 1), '') AS note " +
                 "FROM plate_records p GROUP BY p.plate_number " +
                 "ORDER BY last_seen_at DESC";
         try (Cursor cursor = getReadableDatabase().rawQuery(sql, null)) {
@@ -116,7 +159,8 @@ public final class PlateDatabase extends SQLiteOpenHelper {
                         cursor.getString(cursor.getColumnIndexOrThrow("latest_plate_type")),
                         cursor.getInt(cursor.getColumnIndexOrThrow("record_count")),
                         cursor.getLong(cursor.getColumnIndexOrThrow("last_seen_at")),
-                        cursor.getString(cursor.getColumnIndexOrThrow("latest_image_path"))));
+                        cursor.getString(cursor.getColumnIndexOrThrow("latest_image_path")),
+                        cursor.getString(cursor.getColumnIndexOrThrow("note"))));
             }
         }
         return groups;
@@ -140,6 +184,7 @@ public final class PlateDatabase extends SQLiteOpenHelper {
                 selection, selectionArgs, null, null, null)) {
             while (cursor.moveToNext()) paths.add(cursor.getString(0));
             db.delete("plate_records", selection, selectionArgs);
+            db.delete("plate_notes", selection, selectionArgs);
             db.setTransactionSuccessful();
         } finally {
             db.endTransaction();

@@ -58,6 +58,13 @@ public final class PlateGroupAdapter extends RecyclerView.Adapter<PlateGroupAdap
         holder.code.setText(group.plateNumber);
         PlateBadgeStyler.apply(holder.code, group.latestPlateType);
         holder.type.setText(group.latestPlateType);
+        if (group.note == null || group.note.isBlank()) {
+            holder.note.setText("");
+            holder.note.setVisibility(View.GONE);
+        } else {
+            holder.note.setText("备注：" + group.note);
+            holder.note.setVisibility(View.VISIBLE);
+        }
         holder.count.setText(group.recordCount + " 次记录");
         holder.lastSeen.setText("最近：" + dateFormat.format(new Date(group.lastSeenAt)));
         holder.image.setImageDrawable(null);
@@ -89,6 +96,7 @@ public final class PlateGroupAdapter extends RecyclerView.Adapter<PlateGroupAdap
         final ImageView image;
         final TextView code;
         final TextView type;
+        final TextView note;
         final TextView count;
         final TextView lastSeen;
 
@@ -97,6 +105,7 @@ public final class PlateGroupAdapter extends RecyclerView.Adapter<PlateGroupAdap
             image = itemView.findViewById(R.id.group_image);
             code = itemView.findViewById(R.id.group_code);
             type = itemView.findViewById(R.id.group_type);
+            note = itemView.findViewById(R.id.group_note);
             count = itemView.findViewById(R.id.group_count);
             lastSeen = itemView.findViewById(R.id.group_last_seen);
         }

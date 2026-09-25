@@ -54,6 +54,18 @@
                 android:textStyle="bold" />
 
             <TextView
+                android:id="@+id/group_note"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="5dp"
+                android:ellipsize="end"
+                android:maxLines="2"
+                android:textColor="#8A5100"
+                android:textSize="14sp"
+                android:textStyle="bold"
+                android:visibility="gone" />
+
+            <TextView
                 android:id="@+id/group_count"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"

@@ -24,6 +24,33 @@
         android:textSize="15sp"
         android:textStyle="bold" />
 
+    <com.google.android.material.textfield.TextInputLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginHorizontal="16dp"
+        android:hint="车牌备注（最多 80 字）"
+        app:helperText="留空并保存可清除备注">
+
+        <com.google.android.material.textfield.TextInputEditText
+            android:id="@+id/plate_note_input"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:imeOptions="actionDone"
+            android:inputType="textCapSentences"
+            android:maxLength="80"
+            android:maxLines="1"
+            android:singleLine="true" />
+    </com.google.android.material.textfield.TextInputLayout>
+
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/save_note_button"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="end"
+        android:layout_marginEnd="16dp"
+        android:layout_marginBottom="8dp"
+        android:text="保存备注" />
+
     <androidx.recyclerview.widget.RecyclerView
         android:id="@+id/detail_records_list"
         android:layout_width="match_parent"
